@@ -1,0 +1,169 @@
+Association of Street Parking Availability and Review Stars for Restaurants in Edinburgh
+===============================
+width: 1600
+height: 1200
+transition: rotate
+css: design.css
+
+<br><br><br><br><br><br><br><br>
+<span class="titleDesc">A Data Science Capstone</span>
+<br><br>
+<span class="titleDesc">
+22 November 2015
+</span>
+
+Question of Interest and Methods
+===============================
+type:content
+<hr class="line">
+
+**Introduction**
+
+<span class="subheading">The business question to be investigated</span> would be to find out if the availability of street parking has any association on the number of review stars a restaurant in the UK (Edinburgh) receive from restaurant goes.
+
+**Methods**
+
+<span class="subheading">Data Processing and Exploratory Data Analysis</span>
+- Exploratory data analysis was done to determine if the question above could be answered from the data downloaded from Yelp. 
+- Data processing includes making use of the machine learning algorithm DBSCAN.
+
+<span class="subheading">Statistical Inference</span>
+- The chi square test of independence can be used to test if there are any associations between the attributes for a contingency table of the review stars and the availability of street parking.
+- Cramer’s V, a measure of association for non parametric statistics was used to measure the effect size. 
+
+<br>
+**In the subsequent sections, more details on the exploratory data analysis and statistical inference will be shared.**
+
+Data Processing & Exploratory Data Analysis
+===============================
+type:content
+<hr class="line">
+- <small><span class="subheading">As the data set contains data from 10 cities across 4 countries</span>, we would need to first explore the data todetermine if the question can be answered from the data.</small>
+
+- <small><span class="subheading">From initial exploration</span>, we found that there are approximately 400 cities and 30 states in the data. The DBSCAN algorithm was used to cluster the data based on longitude and latitude to arrive at 10 clusters. </small>
+
+- <small>The clustered data was visually inspected by plotting the points that corresponds to Edinburgh (ie. cluster 9 as shown below) on a map. Subsequently, the data was subsetted to contain only data from Edinburgh. The proportion of stars these businesses receive and if street parking is available was also plotted. </small>
+
+```{r cluster_plot_chunk, echo=FALSE,message=FALSE, fig.width=30, fig.height=11, fig.align='center'}
+# Loading required libraries
+# -----------------------------------------------------
+library(ggplot2)
+library(ggmap)
+library(gridExtra)
+# Read data from saved files. The commands to save the RDS files from the
+# analysis are provided for reference. 
+# -----------------------------------------------------
+# saveRDS(aggClusterPlotData,"rpresdata/aggClusterPlotData.RDS")
+# saveRDS(stateText,"rpresdata/stateText.RDS")
+# saveRDS(biz_edinb,"rpresdata/biz_edinb.RDS")
+# saveRDS(map_edinb,"rpresdata/map_edinb.RDS")
+# saveRDS(parkingData,"rpresdata/parkingData.RDS")
+
+aggClusterPlotData <- readRDS("rpresdata/aggClusterPlotData.RDS")
+stateText <- readRDS("rpresdata/stateText.RDS")
+
+biz_edinb <- readRDS("rpresdata/biz_edinb.RDS")
+map_edinb <- readRDS("rpresdata/map_edinb.RDS")
+parkingData <- readRDS("rpresdata/parkingData.RDS")
+
+# Create the plots
+# -----------------------------------------------------
+aggClusterPlot <- 
+        ggplot(data=aggClusterPlotData, 
+               aes(x=cluster, y=count,  fill=cluster)) +
+        geom_bar(stat="identity") +
+        geom_text(aes(label=stateText$stateText),
+                  size=5, vjust=-0.5,
+                  colour="black", fontface="bold") +
+        xlab("Clusters") +
+        ylab("# of Businesses") +
+        ylim(0,30000) +
+        theme(legend.position = "none", 
+              plot.title=element_text(face="bold",size=20),
+              axis.title=element_text(face="bold",size=18)) +
+        ggtitle("Number of Businesses by Clusters") 
+
+plot_edinb <- ggmap(map_edinb) +
+        geom_point(data=biz_edinb,colour="brown",
+                   aes(x=biz_edinb$longitude, y=biz_edinb$latitude),
+                   alpha=.3, size=1) +
+        xlab("Longitude") +
+        ylab("Latitude") +
+        theme(legend.position = "none", 
+              plot.title=element_text(face="bold",size=20),
+              axis.title=element_text(face="bold",size=18)) +
+        ggtitle("Businesses in Cluster 9 (Edinburgh)") 
+
+parkingPlot <- ggplot(data=parkingData, aes(x=parking_street)) + 
+        geom_bar(aes(fill=stars, name="Stars"), position="fill") +
+        xlab("Availability of Street Parking") +
+        ylab("Proportion of Stars") +
+        theme(legend.position = "bottom",
+              legend.direction="horizontal",
+              legend.text=element_text(face="bold",size=18),
+              legend.title=element_text(face="bold",size=18),
+              plot.title=element_text(face="bold",size=20),
+              axis.title=element_text(face="bold",size=18)) +
+        guides(fill=guide_legend(title="Stars")) +
+        ggtitle("Proportion of Stars by the Availability of Street Parking")
+
+grid.arrange(aggClusterPlot,plot_edinb, parkingPlot, ncol=3, nrow=1)
+```
+
+
+
+- <small><span class="subheading">The attribute of interest (parking_street) was also found to have about 33% NAs.</span> Businesses with NAs for the parking_street attribute was excluded from the analysis. </small>
+
+
+Statistical Inference
+===============================
+type:content
+
+<small>
+**The Chi-Square Test of Independence** was used to test if there are any associations between the attributes the contingency table below. It was applied to determine if there is any significant association between the 2 variables, parking_street and the review stars. <span class="subheading">The null hypothesis states that the availability of street parking (parking_street) and review stars areindependent.</span> </small>
+
+```{r stat_infer, echo=FALSE,message=FALSE, resuls="asis"}
+# Loading required libraries
+# -----------------------------------------------------
+library(vcd)
+
+# Read data from saved files. The commands to save the RDS files from the
+# analysis are provided for reference. 
+# -----------------------------------------------------
+# saveRDS(con_tbl,"rpresdata/con_tbl.RDS")
+
+con_tbl <- readRDS("rpresdata/con_tbl.RDS")
+con_tbl
+chisq.test(con_tbl)
+```
+
+<small>
+**Cramer's V** was used to measure the effect size, we will use the Cramer’s V. Cramer’s V is a measure of association for non parametric statistics.
+</small>
+
+```{r cramer, echo=FALSE,message=FALSE, resuls="markup"}
+
+assocstats(con_tbl)
+```
+
+Results and Discussion
+===============================
+type:content
+
+**Answering the Question**
+
+<span class="subheading">Chi Square Test of Independence</span>
+
+- Based on the chi-square test of independence performed earlier, at 0.05 significance level, we **reject** the null hypothesis that the availability of street parking (parking_street) and review stars are independent with a p-value of 2.9552e-12.
+
+<span class="subheading">Cramer's V</span>
+- Based on Cramer's V, with a value of 0.078, the effect size can be said to be small or negligible. 
+
+<span class="subheading">... and to answer the primary question ...</span>
+- Our analysis shows that there is a negligible effect of the availability of street parking on review stars although the 2 attributes are statistically dependent.
+
+**Further Discussion**
+
+- While we have established that the availability of street parking has a small effect on the number of review stars, there may be further other confounding factors affecting the review stars a restaurant may receive. 
+
+- The analysis was limited to a single attribute of the businesses and further work would include identifying themes from the review text to further ascertain if the availability of street parking indeed does affect review stars.

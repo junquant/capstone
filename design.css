@@ -1,0 +1,57 @@
+.reveal h1 {
+        hyphens:none;
+        font-weight:bold;
+        -webkit-hyphens:none;
+        -moz-hyphens:none;
+        hyphens:none;
+}
+
+.reveal h2 {
+        hyphens:none;
+        font-weight:bold;
+}
+
+.reveal h3 {
+        hyphens:none;
+        font-weight:bold;
+        font-size: 2em;
+}
+
+.content .reveal p,
+.content .reveal h2,
+.content .reveal h3,
+.content .reveal ul
+{
+        color:#666666;
+}
+
+.content .reveal .state-background {
+        background: white;
+}
+
+.reveal .titleDesc {
+        font-size: 1.2em;
+        font-weight:bold;
+}
+
+.reveal .line {
+    display: block;
+    margin-top: 0.5em;
+    margin-bottom: 1em;
+    margin-left: auto;
+    margin-right: auto;
+    border: 0; height: 1px; 
+    background: #333; 
+    background-image: linear-gradient(to right, #ccc, #333, #ccc);
+}
+
+.reveal .subheading {
+        font-size: 1em;
+        font-weight:bold;
+        color:#CC9900;
+}
+
+.reveal ul, 
+.reveal ol {
+    list-style-type: square;
+}

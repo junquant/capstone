@@ -1,0 +1,425 @@
+---
+title: "Determining the Association of Availability of Street Parking and Review Stars for Restaurants in Edinburgh"
+output:
+  pdf_document: default
+---
+
+## **Introduction** 
+
+**The business question to be investigated would be to find out if the availability of street parking has any association on the number of review stars a restaurant in the UK (Edinburgh) receive from restaurant goes.**
+
+The study would facilitate businesses wanting to set up a restaurant in the UK to determine the location of their restaurant business. More specifically, whether to set up a restaurant at a location where street parking is available. Also, the result of this investigation could serve as a starting point to other studies on businesses' locations and the review stars it receives. 
+
+```{r load_chunk, echo=FALSE,message=FALSE, warning=FALSE}
+
+# Loading required libraries
+# ---------------------------------------------------------
+library(ggmap) # used to plot points on a map
+library(dbscan) # used to cluster location data 
+library(dplyr) # used for data processing tasks
+library(tidyr) # used for data processing tasks
+library(jsonlite) # used for processing json files
+library(gridExtra) # used for laying out plots
+library(grid) # used for laying out plots
+library(vcd) # used for computing Cramer's V among other things
+
+# The yelp dataset was read and then stored in RDS files
+# so that subsequent reads will be faster. The RDS files are being
+# loaded here. 
+# ---------------------------------------------------------
+businesses <- readRDS("data_business.RDS")
+checkins <- readRDS("data_checkins.RDS")
+reviews <- readRDS("data_reviews.RDS")
+tips <- readRDS("data_tips.RDS")
+users <- readRDS("data_users.RDS")
+```
+
+## **Methods**
+
+**Exploring Business Locations**
+
+As the data set contains data from 10 cities across 4 countries, we would need to first explore the data to determine if the question can be answered from the data. This was done through processing and subsetting the data set to data that relevant to Edinburgh.
+
+As we would need to subset the data set to contain only data for Edinburgh for the analysis, we will first need to explore the states available in the data set. From the initial plot of the businesses according to their states, it seems that there are more than a state being associated with a city.
+
+```{r explore_state_chunk, echo=FALSE,message=FALSE, fig.width=10, fig.height=6}
+
+# Subset the data to contain only the cities and states
+# and grouping the number businesses by state and city
+# ---------------------------------------------------------
+bizLocation <- businesses[,c(1,6,11)]
+
+bizLocationGrouped <- bizLocation %>%
+        group_by(state,city) %>%
+        summarise(count=length(business_id))
+        
+bizLocationGrouped <- data.frame(bizLocationGrouped)
+
+# Visualize the states and cities to determine if the data is clean 
+# for analysis
+# ---------------------------------------------------------
+
+statecityplot <- 
+        ggplot(data=bizLocationGrouped[bizLocationGrouped$count>10,], 
+               aes(x=city, y=state)) +
+        geom_tile(aes(fill=count)) + 
+        scale_fill_gradient(low="steelblue", 
+                            high="black", name="# of Businesses") +
+        xlab("Cities") +
+        ylab("States") +
+        theme(legend.position = "bottom",
+              legend.direction="horizontal",
+              legend.key.width=unit(3,"cm"),
+              legend.key.height=unit(8,"mm"),
+              plot.title=element_text(face="bold",size=12),
+              axis.title=element_text(face="bold",size=10),
+              axis.text.x=element_text(size=9, angle=90, hjust=1),
+              axis.text.y=element_text(size=10)) +
+        ggtitle("Number of Businesses by States and Cities") 
+
+statecityplot
+
+```
+\begin{center}
+\textit{Only cities with more than 10 businesses are shown in the plot}
+\end{center}
+
+To facilitate clustering the businesses in Edinburgh, we make use of the DBSCAN [(link)](https://en.wikipedia.org/wiki/DBSCAN) algorithm to cluster the longitude and latitude data available in the data set. This will allow us to subset the data set using the clusters to business in Edinburgh. From the plot below, we see that cluster 9 probably corresponds to Edinburgh containing the city Edinburgh (EDH), or cities near Edinburgh. 
+
+```{r cluster_location_chunk, echo=FALSE,message=FALSE}
+
+# Subset the data to contain only spatial data of the business
+# ---------------------------------------------------------
+locationData <- as.data.frame(cbind(businesses$business_id,
+                               businesses$longitude,
+                               businesses$latitude))
+
+names(locationData) <- c("business_id","longitude","latitude")
+
+locationData$longitude <- as.double(as.character(locationData$longitude))
+locationData$latitude <- as.double(as.character(locationData$latitude))
+
+# Convert the data into a matrix and use dbscan to cluster the data
+# ---------------------------------------------------------
+locationDataMatrix <- as.matrix(locationData[2:3])
+
+den<-dbscan(locationDataMatrix,0.5)
+
+# Merge the clustered data with the business location data consisting
+# of the city and state
+# ---------------------------------------------------------
+locationData$cluster <- den$cluster
+
+clusteredData <- merge(x=locationData,y=bizLocation,by = "business_id")
+
+aggCluster <- clusteredData[,4:6] %>%
+                group_by(cluster,state) %>% 
+                summarise(count=length(city))
+
+aggCluster<-as.data.frame(aggCluster)
+aggCluster$cluster <- as.factor(aggCluster$cluster)
+
+
+# Create the labels for the states to display in the plot and plot the data
+# ---------------------------------------------------------
+aggClusterPlotData <-as.data.frame(
+        summarise(group_by(aggCluster,cluster),count=sum(count)))
+
+stateText <- tapply(aggCluster$state,aggCluster$cluster,
+                    FUN=paste, simplify = FALSE)
+stateText <- apply(stateText,1,FUN=function(x) paste(unlist(x),collapse = "\n"))
+stateText <- as.data.frame(stateText)
+```
+
+```{r cluster_plot_chunk, echo=FALSE,message=FALSE, fig.width=10, fig.height=5}
+
+aggClusterPlot <- 
+        ggplot(data=aggClusterPlotData, 
+               aes(x=cluster, y=count,  fill=cluster)) +
+        geom_bar(stat="identity") +
+        geom_text(aes(label=stateText$stateText),
+                  size=3, vjust=-0.5,
+                  colour="black", fontface="bold") +
+        xlab("Clusters") +
+        ylab("# of Businesses") +
+        ylim(0,30000) +
+        theme(legend.position = "none", 
+              plot.title=element_text(face="bold",size=12),
+              axis.title=element_text(face="bold",size=10)) +
+        ggtitle("Number of Businesses by Clusters") 
+
+aggClusterPlot
+```
+
+The clustered points are plotted onto a map to visually inspect the results. The plot below shows the points in cluster 9, which corresponds to Edinburgh. 
+
+```{r map_chunk, echo=FALSE,message=FALSE}
+
+# Set the parameters for getting the map to explore the geo spatial data
+# available in the data set
+# ---------------------------------------------------------
+zoom <- 10
+maptype <- "roadmap"
+src <- "google"
+
+# Coordinates of the 10 cities in the data set. We are only concerned about
+# Edinburgh. The rest of the points are there for reference purposes.
+# ---------------------------------------------------------
+co_edinb <- c(-3.1889,55.9531)
+
+# co_karls <- c(8.4040,49.0092)
+# co_montr <- c(-73.5673,45.5017)
+# co_water <- c(-80.5167,43.4667)
+# co_pitts <- c(-79.9764,40.4397)
+# co_charl <- c(-80.8433,35.2269)
+# co_urban <- c(-88.2042,40.1097)
+# co_phoen <- c(-112.0667,33.4500)
+# co_lasve <- c(-115.1739,36.1215)
+# co_madis <- c(-89.4000,43.0667)
+
+# Get the maps of Edinburgh using get_map from ggmap. The rest of the maps
+# are commented and left there for reference purposes. 
+# ---------------------------------------------------------
+map_edinb <- get_map(location=co_edinb,zoom=zoom,maptype=maptype,source=src)
+
+# map_karls <- get_map(location=co_karls,zoom=zoom,maptype=maptype,source=src)
+# map_montr <- get_map(location=co_montr,zoom=zoom,maptype=maptype,source=src)
+# map_water <- get_map(location=co_water,zoom=zoom,maptype=maptype,source=src)
+# map_pitts <- get_map(location=co_pitts,zoom=zoom,maptype=maptype,source=src)
+# map_charl <- get_map(location=co_charl,zoom=zoom,maptype=maptype,source=src)
+# map_urban <- get_map(location=co_urban,zoom=zoom,maptype=maptype,source=src)
+# map_phoen <- get_map(location=co_phoen,zoom=zoom,maptype=maptype,source=src)
+# map_lasve <- get_map(location=co_lasve,zoom=zoom,maptype=maptype,source=src)
+# map_madis <- get_map(location=co_madis,zoom=zoom,maptype=maptype,source=src)
+
+# Subset the clustered data to contain only businesses in Edinburgh
+# and subsequently plot them onto the map
+# ---------------------------------------------------------
+biz_edinb <- clusteredData[clusteredData$cluster==9,]
+
+plot_edinb_noBiz <- ggmap(map_edinb) +
+                xlab("Longitude") +
+                ylab("Latitude") +
+                theme(legend.position = "none", 
+                      plot.title=element_text(face="bold",size=8),
+                      axis.title=element_text(face="bold",size=8),
+                      axis.text=element_text(size=8)) +
+                ggtitle("Map of Edinburgh") 
+
+plot_edinb <- ggmap(map_edinb) +
+        geom_point(data=biz_edinb,colour="brown",
+                   aes(x=biz_edinb$longitude, y=biz_edinb$latitude),
+                   alpha=.3, size=1) +
+        xlab("Longitude") +
+        ylab("Latitude") +
+        theme(legend.position = "none", 
+              plot.title=element_text(face="bold",size=8),
+              axis.title=element_text(face="bold",size=8),
+              axis.text=element_text(size=8)) +
+        ggtitle("Businesses in Cluster 9 (Edinburgh)") 
+
+grid.arrange(plot_edinb_noBiz,plot_edinb, ncol=2, nrow=1)
+```
+
+Once the clustering results were validated, we were able to subset the data set for businesses in Edinburgh for further analysis. 
+
+***
+
+**Exploring Business Attributes**
+
+Next, the businesses data set was further subsetted to contain only restaurants data and the business ids that was found to be in Edinburgh. 
+
+Once we have the Edinburgh restaurants' business ids, we would need to select the relevant business attributes needed for analysis to be merged from the original businesses data set. We do this by first flattening the attributes from the original data set and then merging it with Edinburgh restaurants' data. The attribute names were also made consistent. A sample of the cleansed business attributes is shown below. 
+
+```{r cat_chunk, echo=FALSE,message=FALSE}
+
+# Transform the business categories available in the original data set
+# into a data frame to facilitate subsetting
+# ---------------------------------------------------------
+bizids <- businesses[,1]
+bizcats <- businesses[,5]
+
+n <- sapply(bizcats,length)
+reps <- rep(bizids,n)
+
+bizcats <- unlist(bizcats)
+bizcats <- data.frame(business_id=reps, categories=bizcats)
+
+# Get the business_ids of restaurants in the Edinburgh area
+# ---------------------------------------------------------
+restaurantids <- bizcats[bizcats$categories=="Restaurants",]
+res_edinb <- merge(biz_edinb,restaurantids)
+
+```
+
+```{r attr_chunk, echo=FALSE,message=FALSE}
+
+# Extract the business attributes from the businesses data set and merging
+# it to the Edbinburgh restaurants data set
+# ---------------------------------------------------------
+bizattr <- businesses[,c(1,14)]
+bizattr <- flatten(bizattr)
+bizattr[,4] <- as.logical(as.character(bizattr[,4]))
+
+res_edinb <- merge(res_edinb,bizattr)
+
+# Clean the attribute names to remove punctuations, duplicates and
+# redundant information such as the prefix "attribute"
+# ---------------------------------------------------------
+sfeatures <- names(res_edinb)
+sfeatures <- gsub("[[:punct:]]"," ",sfeatures)
+sfeatures <- gsub("(attributes)", " ",sfeatures)
+sfeatures <- gsub(" {2,}", " ",sfeatures)
+sfeatures <- gsub("^\\s+|\\s+$", "",sfeatures)
+sfeatures <- tolower(sfeatures)
+sfeatures <- gsub(" ", "_",sfeatures)
+sfeatures <- make.unique(sfeatures, sep="_")
+names(res_edinb) <- sfeatures
+
+# Here, we convert the various attributes into the applicable types
+# ---------------------------------------------------------
+res_edinb$price_range <- as.factor(res_edinb$price_range)
+res_edinb$alcohol <- as.factor(res_edinb$alcohol)
+res_edinb$noise_level <- as.factor(res_edinb$noise_level)
+res_edinb$attire  <- as.factor(res_edinb$attire)
+res_edinb$smoking <- as.factor(res_edinb$smoking)
+res_edinb$wi_fi <- as.factor(res_edinb$wi_fi)
+res_edinb$byob_corkage <- as.factor(res_edinb$byob_corkage)
+res_edinb$ages_allowed <- as.factor(res_edinb$ages_allowed)
+
+```
+
+```{r, echo=FALSE,results="markup"}
+cleanTable <- data.frame(head(names(bizattr)))
+names(cleanTable) <- "original_attribute"
+cleanTable$clean_attribute <- head(sfeatures[c(1,8,9,10,11,12)])
+cleanTable
+
+```
+
+We then look at the % of missing values from each attribute. Typically, missing values will be imputed. However, our analysis shows that some attributes contain more than 50% of missing values. These attributes will be excluded from the data set. After excluding these attributes, the attribute *parking_street*, which we will use for our analysis remains in the data set and has more than 50% of the attribute populated. 
+
+```{r explore_na_chunk, echo=FALSE,message=FALSE}
+
+# Calculate the % of NAs for each of the business attribute
+# ---------------------------------------------------------
+percentageNA <- apply(res_edinb,2,FUN=function(x) sum(is.na(x))/length(x))
+countNA <- apply(res_edinb,2,FUN=function(x) sum(is.na(x)))
+countRow <- apply(res_edinb,2,FUN=function(x) length(x))
+
+result <- data.frame(cbind(countNA,cbind(countRow,percentageNA)))
+includedCols <- rownames(result[result$percentageNA<=0.5,])
+
+# Data set for analysis
+# ----------------------------------------------------------
+res_edinb <- res_edinb[,includedCols]
+
+# NA Plot Data
+# ----------------------------------------------------------
+naPlotData <- result[result$percentageNA<=0.5,]
+naPlotData$attribute <- rownames(naPlotData)
+
+naPlot <- 
+        ggplot(data=naPlotData, 
+               aes(x=attribute, y=percentageNA,fill=percentageNA)) +
+        geom_bar(stat="identity") +
+        xlab("Attribute") +
+        ylab("Percentage NAs") +
+        ylim(0,1) +
+        scale_fill_gradient(low="white", 
+                            high="brown", name="# of Businesses") +
+        theme(legend.position = "none", 
+              plot.title=element_text(face="bold",size=10),
+              axis.title=element_text(face="bold",size=8),
+              axis.text.x=element_text(size=8, angle=90, hjust=1,vjust=0.5)) +
+        ggtitle("Percentage NAs by Attributes") 
+
+naPlot
+
+```
+
+###### Finally, reviews were then merged with the Edinburgh businesses data set containing the attributes, such that the stars the businesses received from reviews can be used for analysis. With that, the data is now ready for analysis. 
+```{r reviews_chunk, echo=FALSE,message=FALSE}
+# Merge the reviews data with the Edinburgh data for analysis
+# ---------------------------------------------------------
+reviewStars <- reviews[,c(4,8)]
+reviewsEdinb <- merge(reviewStars,res_edinb,all.x = TRUE)
+reviewsEdinb <- reviewsEdinb[reviewsEdinb$cluster=="9" & 
+                                     !is.na(reviewsEdinb$cluster),]
+
+reviewsEdinb$stars <- as.factor(reviewsEdinb$stars)
+
+```
+
+***
+
+**Exploratory Tables and Plots**
+
+The contingency table [(link)](https://en.wikipedia.org/wiki/Contingency_table) below shows the number of reviews in each star category that restaurants with and without street parking receives in Edinburgh. Missing values for parking_street were excluded from the analysis. 
+
+```{r contingency_tbl_chunk, echo=FALSE,results="markup"}
+# Contingency Table of Review Stars and Availability of Street Parking. 
+# NAs are excluded here. 
+# ---------------------------------------------------------
+con_tbl <- xtabs(~stars+parking_street, data=reviewsEdinb)
+addmargins(con_tbl)
+```
+
+To investigate further if there are any differences in the distribution of the number of stars awarded between restaurants with street parking and restaurants without street parking, an exploratory plot of the proportion of stars against the availability of street parking was used to visually inspect the data. From the plot, we notice that for restaurants with street parking, there seemed to be a higher proportion of 4 and 5 stars reviews. 
+
+```{r explore_chunk, echo=FALSE, fig.align="center", fig.height=4, fig.width=4}
+# Explore if the distribution of the review stars are different for businesses
+# with and without parking. NAs are excluded here.
+# ---------------------------------------------------------
+parkingData <- reviewsEdinb[,c(2,35)]
+
+parkingPlot <- ggplot(data=parkingData, aes(x=parking_street)) + 
+        geom_bar(aes(fill=stars, name="Stars"), position="fill") +
+        xlab("Availability of Street Parking") +
+        ylab("Proportion of Stars") +
+        theme(legend.position = "bottom",
+              legend.direction="horizontal",
+              legend.text=element_text(face="bold",size=8),
+              legend.title=element_text(face="bold",size=8),
+              plot.title=element_text(face="bold",size=10),
+              axis.title=element_text(face="bold",size=8),
+              axis.text=element_text(size=8)) +
+        guides(fill=guide_legend(title="Stars")) +
+        ggtitle("Proportion of Stars by the Availability of Street Parking")
+
+parkingPlot
+
+```
+
+***
+
+**Statistical Inference**
+
+The chi-square [(link)](https://en.wikipedia.org/wiki/Chi-squared_test) test [(link)](http://yatani.jp/teaching/doku.php?id=hcistats:chisquare) of independence can be used to test if there are any associations between the attributes for a contingency table such as the one above. The test was applied to determine if there is any significant association between the 2 variables, parking_street and the review stars. 
+
+The null hypothesis states that the availability of street parking (parking_street) and review stars are **independent**.
+
+The alternate hypothesis states that the availability of street parking (parking_street) and review stars are **dependent**.
+
+```{r chisq_chunk, echo=FALSE,results="markup"}
+con_tbl
+chisq.test(con_tbl)
+```
+
+The test was appropriate as each review only contributed to a single category (ie. data were not paired). Furthermore, the total number of observations exceeds 20 and the test is able to approximate appropriately. If not, the Fisher's exact test should be used instead.
+
+To measure the effect size [(link-pg7)](http://files.eric.ed.gov/fulltext/EJ955682.pdf), we will use the Cramer's V. Cramer's V [(link)](https://en.wikipedia.org/wiki/Cram%C3%A9r's_V) is a measure of association for non parametric statistics. 
+
+```{r cramer_chunk, echo=TRUE,results="markup"}
+assocstats(con_tbl)
+```
+
+## **Results**
+Based on the chi-square test of independence performed earlier, at 0.05 significance level, we **reject** the null hypothesis that the availability of street parking (parking_street) and review stars are independent with a p-value of 2.9552e-12. Based on Cramer's V, the effect size can be said to be small or negligible. 
+
+Lastly, to answer the primary question, our analysis shows that there is a negligible effect of the availability of street parking on review stars although the 2 attributes are statistically dependent. 
+
+## **Discussion**
+While we have established that the availability of street parking has a small effect on the number of review stars, there may be further other confounding factors affecting the review stars a restaurant may receive. The analysis was limited to a single attribute of the businesses and further work would include identifying themes from the review text to further ascertain if the availability of street parking indeed does affect review stars.
+
+
