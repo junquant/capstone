@@ -50,8 +50,10 @@ type:content
 library(ggplot2)
 library(ggmap)
 library(gridExtra)
-# Read data from saved files. The commands to save the RDS files from the
-# analysis are provided for reference. 
+# The objects are saved from the YelpAnalysis.Rmd file and read here for
+# creating the presentation. The commands are provided here for reference. 
+# The objects have the same name as the YelpAnalysis.Rmd file. For more 
+# details on how the objects are created, refer to the YelpAnalysis.Rmd.
 # -----------------------------------------------------
 # saveRDS(aggClusterPlotData,"rpresdata/aggClusterPlotData.RDS")
 # saveRDS(stateText,"rpresdata/stateText.RDS")
