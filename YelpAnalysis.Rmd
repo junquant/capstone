@@ -25,8 +25,22 @@ library(vcd) # used for computing Cramer's V among other things
 
 # The yelp dataset was read and then stored in RDS files
 # so that subsequent reads will be faster. The RDS files are being
-# loaded here. 
+# loaded here. The commands to read in the json files are provided for 
+# reference.
 # ---------------------------------------------------------
+# library(jsonlite)
+# path_businesses <- "data/yelp_academic_dataset_business.json"
+# path_checkins <- "data/yelp_academic_dataset_checkin.json"
+# path_reviews <- "data/yelp_academic_dataset_review.json"
+# path_tips <- "data/yelp_academic_dataset_tip.json"
+# path_users <- "data/yelp_academic_dataset_user.json"
+# 
+# businesses <- stream_in(file(path_businesses))
+# checkins <- stream_in(file(path_checkins))
+# reviews <- stream_in(file(path_reviews))
+# tips <- stream_in(file(path_tips))
+# users <- stream_in(file(path_users))
+
 businesses <- readRDS("data_business.RDS")
 checkins <- readRDS("data_checkins.RDS")
 reviews <- readRDS("data_reviews.RDS")
